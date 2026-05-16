@@ -1,0 +1,26 @@
+name: dnstoggle
+description: "DNS Toggle - Control DNS ad blocking on Android with Shizuku"
+publish_to: 'none'
+version: 1.0.0
+
+environment:
+  sdk: ^3.10.7
+
+dependencies:
+  connectivity_plus: ^7.1.1
+  dynamic_color: ^1.8.1
+  file_picker: ^11.0.2
+  flutter:
+    sdk: flutter
+  intl: ^0.20.2
+  package_info_plus: ^9.0.1
+  path_provider: ^2.1.5
+  provider: ^6.1.2
+  share_plus: ^10.1.0
+  shared_preferences: ^2.3.5
+  shimmer: ^3.0.0
+  
+flutter:
+  uses-material-design: true
+dev_dependencies:
+  flutter_lints: ^6.0.0

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#1D1B20</color>
+    <color name="primary">#6750A4</color>
+    <color name="onPrimary">#FFFFFF</color>
+    <color name="surface">#F7F2FA</color>
+    <color name="onSurface">#1D1B20</color>
+    <color name="surfaceVariant">#E7E0EC</color>
+    <color name="onSurfaceVariant">#49454F</color>
+    <color name="active">#4CAF50</color>
+    <color name="widget_background">#F7F2FA</color>
+    <color name="widget_text_primary">#1D1B20</color>
+    <color name="widget_text_secondary">#49454F</color>
+</resources>

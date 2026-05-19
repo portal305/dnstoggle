@@ -34,8 +34,12 @@ class BootReceiver : BroadcastReceiver() {
                             Log.i("BootReceiver", "Triggering DNS start...")
                             DnsManager.startDns(context)
                             
-                            // Also start notification if enabled
-                            if (settings.optBoolean("persistentNotification", false)) {
+                            val excludedPrefs = context.getSharedPreferences("dnstoggle_excluded_apps", Context.MODE_PRIVATE)
+                            val excludedPackages = excludedPrefs.getStringSet("excluded_packages", emptySet()) ?: emptySet()
+                            
+                            if (excludedPackages.isNotEmpty()) {
+                                ExcludedAppMonitorService.startService(context)
+                            } else if (settings.optBoolean("persistentNotification", false)) {
                                 DnsNotificationService.startService(context)
                             }
                         }

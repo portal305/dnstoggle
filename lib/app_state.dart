@@ -21,6 +21,13 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   DnsTestResult? _testResult;
   bool _isTesting = false;
   String _appVersion = '1.0.0';
+  List<ExcludedApp> _excludedApps = [];
+  Map<String, int> _serverLatencies = {};
+  bool _isMeasuringLatency = false;
+  List<InstalledApp> _installedApps = [];
+  bool _isLoadingApps = false;
+  bool _hasLoadedApps = false;
+  bool _isRefreshingApps = false;
 
   List<DnsServer> get servers => _servers;
   DnsServer? get selectedServer => _selectedServer;
@@ -33,6 +40,13 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   DnsTestResult? get testResult => _testResult;
   bool get isTesting => _isTesting;
   String get appVersion => _appVersion;
+  List<ExcludedApp> get excludedApps => _excludedApps;
+  Map<String, int> get serverLatencies => _serverLatencies;
+  bool get isMeasuringLatency => _isMeasuringLatency;
+  List<InstalledApp> get installedApps => _installedApps;
+  bool get isLoadingApps => _isLoadingApps;
+  bool get hasLoadedApps => _hasLoadedApps;
+  bool get isRefreshingApps => _isRefreshingApps;
 
   AppState({
     required StorageService storageService,
@@ -88,10 +102,15 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     _deviceSupportsDns = await _dnsService.checkDnsSupport();
-
     _shizukuHasPermission = _shizukuService.hasPermission;
     _servers = _storageService.getServers();
     _settings = _storageService.getSettings();
+    _excludedApps = _storageService.getExcludedApps();
+    _serverLatencies = _storageService.getServerLatencies();
+    _installedApps = _storageService.getInstalledApps();
+    if (_installedApps.isNotEmpty) {
+      _hasLoadedApps = true;
+    }
 
     final selectedId = _storageService.getSelectedServerId();
     _selectedServer = _servers.firstWhere(
@@ -105,12 +124,18 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     _isRunning = await _dnsService.checkActualDnsState();
     await _storageService.setIsRunning(_isRunning);
 
-    if (_settings.persistentNotification) {
+    if (_settings.persistentNotification && _isRunning) {
       await _dnsService.startNotificationService();
     }
 
     _isLoading = false;
     notifyListeners();
+
+    if (_serverLatencies.isEmpty) {
+      measureAllLatencies();
+    }
+
+    loadInstalledApps();
   }
 
   Future<bool> checkBinderAlive() async {
@@ -196,8 +221,16 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     if (success) {
       _isRunning = await _dnsService.checkActualDnsState();
       await _storageService.setIsRunning(_isRunning);
+      if (_excludedApps.isNotEmpty && !_settings.persistentNotification) {
+        _settings = _settings.copyWith(persistentNotification: true);
+        await _storageService.saveSettings(_settings);
+      }
       if (_settings.persistentNotification) {
         await _dnsService.startNotificationService();
+      }
+      if (_excludedApps.isNotEmpty) {
+        await _dnsService.syncExcludedApps(_excludedApps);
+        await _dnsService.startExcludedAppMonitor();
       }
     }
     notifyListeners();
@@ -212,12 +245,13 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
 
+    await _dnsService.stopExcludedAppMonitor();
     final success = await _dnsService.stopDnsService();
     if (success) {
       _isRunning = await _dnsService.checkActualDnsState();
       await _storageService.setIsRunning(_isRunning);
       if (_settings.persistentNotification) {
-        await _dnsService.startNotificationService();
+        await _dnsService.stopNotificationService();
       }
     }
     notifyListeners();
@@ -240,6 +274,114 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  Future<void> measureAllLatencies() async {
+    if (_isMeasuringLatency) return;
+
+    _isMeasuringLatency = true;
+    notifyListeners();
+
+    for (final server in _servers) {
+      final latency = await _dnsService.measureLatency(server.primaryDns);
+      if (latency > 0) {
+        _serverLatencies[server.id] = latency;
+        await _storageService.updateServerLatency(server.id, latency);
+      } else {
+        _serverLatencies[server.id] = -1;
+      }
+    }
+
+    _servers = _storageService.getServers();
+    _isMeasuringLatency = false;
+    notifyListeners();
+  }
+
+  Future<void> refreshLatency(String serverId) async {
+    final server = _servers.firstWhere((s) => s.id == serverId);
+    final latency = await _dnsService.measureLatency(server.primaryDns);
+    if (latency > 0) {
+      _serverLatencies[serverId] = latency;
+      await _storageService.updateServerLatency(serverId, latency);
+    } else {
+      _serverLatencies[serverId] = -1;
+    }
+    _servers = _storageService.getServers();
+    notifyListeners();
+  }
+
+  Future<void> addExcludedApp(ExcludedApp app) async {
+    if (!_excludedApps.any((a) => a.packageName == app.packageName)) {
+      _excludedApps.add(app);
+      await _storageService.saveExcludedApps(_excludedApps);
+      await _dnsService.syncExcludedApps(_excludedApps);
+
+      if (!_settings.persistentNotification) {
+        _settings = _settings.copyWith(persistentNotification: true);
+        await _storageService.saveSettings(_settings);
+      }
+
+      if (_isRunning && _excludedApps.length == 1) {
+        await _dnsService.startExcludedAppMonitor();
+      }
+      notifyListeners();
+    }
+  }
+
+  Future<void> removeExcludedApp(String packageName) async {
+    _excludedApps.removeWhere((a) => a.packageName == packageName);
+    await _storageService.saveExcludedApps(_excludedApps);
+    await _dnsService.syncExcludedApps(_excludedApps);
+    if (_excludedApps.isEmpty) {
+      await _dnsService.stopExcludedAppMonitor();
+    }
+    notifyListeners();
+  }
+
+  Future<void> loadInstalledApps() async {
+    if (_isLoadingApps || _isRefreshingApps) return;
+
+    if (_hasLoadedApps) {
+      _isRefreshingApps = true;
+      notifyListeners();
+
+      _dnsService.getInstalledApps().then((apps) {
+        _installedApps = apps;
+        _storageService.saveInstalledApps(apps);
+        _isLoadingApps = false;
+        _isRefreshingApps = false;
+        _hasLoadedApps = true;
+        notifyListeners();
+      }).catchError((e) {
+        debugPrint('Failed to refresh apps: $e');
+        _isRefreshingApps = false;
+        notifyListeners();
+      });
+      return;
+    }
+
+    _isLoadingApps = true;
+    notifyListeners();
+
+    _dnsService.getInstalledApps().then((apps) {
+      _installedApps = apps;
+      _storageService.saveInstalledApps(apps);
+      _isLoadingApps = false;
+      _hasLoadedApps = true;
+      notifyListeners();
+    }).catchError((e) {
+      debugPrint('Failed to load apps: $e');
+      _isLoadingApps = false;
+      notifyListeners();
+    });
+  }
+
+  Future<bool> checkUsageAccessPermission() async {
+    return await _dnsService.hasUsageAccessPermission();
+  }
+
+  Future<void> openUsageAccessSettings() async {
+    await _dnsService.openUsageAccessSettings();
+  }
+
   Future<void> updateSettings(AppSettings newSettings) async {
     final oldPersistent = _settings.persistentNotification;
 
@@ -258,7 +400,9 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
 
     if (newSettings.persistentNotification != oldPersistent) {
       if (newSettings.persistentNotification) {
-        await _dnsService.startNotificationService();
+        if (_isRunning) {
+          await _dnsService.startNotificationService();
+        }
       } else {
         await _dnsService.stopNotificationService();
       }

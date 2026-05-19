@@ -63,7 +63,7 @@ class DnsService {
       debugPrint('DnsService: Shizuku binder alive: $result');
       return result ?? false;
     } catch (e) {
-      debugPrint('Shizuku binder check failed: $e');
+      debugPrint('DnsService: Shizuku binder check failed: $e');
       return false;
     }
   }
@@ -164,6 +164,34 @@ class DnsService {
       await Future.delayed(const Duration(milliseconds: 300));
     }
     return startDnsService(server);
+  }
+
+  Future<int> measureLatency(String hostname) async {
+    try {
+      final stopwatch = Stopwatch()..start();
+      final addresses = await InternetAddress.lookup(hostname)
+          .timeout(const Duration(seconds: 5));
+      stopwatch.stop();
+      if (addresses.isNotEmpty) {
+        return stopwatch.elapsedMilliseconds;
+      }
+      return -1;
+    } catch (e) {
+      debugPrint('Latency measurement failed for $hostname: $e');
+      return -1;
+    }
+  }
+
+  Future<Map<String, int>> measureAllServersLatencies(List<DnsServer> servers) async {
+    final Map<String, int> latencies = {};
+    for (final server in servers) {
+      final latency = await measureLatency(server.primaryDns);
+      if (latency > 0) {
+        latencies[server.id] = latency;
+      }
+      await Future.delayed(const Duration(milliseconds: 200));
+    }
+    return latencies;
   }
 
   Future<DnsTestResult> testDnsConnection() async {
@@ -277,6 +305,91 @@ class DnsService {
     }
   }
 
+  Future<List<InstalledApp>> getInstalledApps() async {
+    try {
+      debugPrint('DnsService: Requesting installed apps...');
+      final result = await _shizukuChannel.invokeMethod<List<dynamic>>(
+        'getInstalledApps',
+      );
+      debugPrint('DnsService: Got result: ${result?.length ?? 0} apps');
+      if (result == null) {
+        debugPrint('DnsService: Result is null');
+        return [];
+      }
+      final apps = result.map((app) {
+        final map = Map<String, dynamic>.from(app as Map);
+        return InstalledApp(
+          packageName: map['packageName'] as String,
+          appName: map['appName'] as String,
+          iconBase64: map['iconBase64'] as String?,
+        );
+      }).toList();
+      debugPrint('DnsService: Parsed ${apps.length} apps');
+      return apps;
+    } catch (e, stack) {
+      debugPrint('Failed to get installed apps: $e');
+      debugPrint('Stack: $stack');
+      return [];
+    }
+  }
+
+  Future<bool> hasUsageAccessPermission() async {
+    try {
+      final result = await _shizukuChannel.invokeMethod<bool>(
+        'hasUsageAccessPermission',
+      );
+      return result ?? false;
+    } catch (e) {
+      debugPrint('Failed to check usage access: $e');
+      return false;
+    }
+  }
+
+  Future<void> openUsageAccessSettings() async {
+    try {
+      await _shizukuChannel.invokeMethod('openUsageAccessSettings');
+    } catch (e) {
+      debugPrint('Failed to open usage access settings: $e');
+    }
+  }
+
+  Future<void> startExcludedAppMonitor() async {
+    try {
+      await _shizukuChannel.invokeMethod('startExcludedAppMonitor');
+    } catch (e) {
+      debugPrint('Failed to start excluded app monitor: $e');
+    }
+  }
+
+  Future<void> stopExcludedAppMonitor() async {
+    try {
+      await _shizukuChannel.invokeMethod('stopExcludedAppMonitor');
+    } catch (e) {
+      debugPrint('Failed to stop excluded app monitor: $e');
+    }
+  }
+
+  Future<bool> isAccessibilityServiceEnabled() async {
+    try {
+      final result = await _shizukuChannel.invokeMethod<bool>('isAccessibilityServiceEnabled');
+      return result ?? false;
+    } catch (e) {
+      debugPrint('Failed to check accessibility service: $e');
+      return false;
+    }
+  }
+
+  Future<void> syncExcludedApps(List<ExcludedApp> apps) async {
+    try {
+      final packageNames = apps.map((a) => a.packageName).toList();
+      await _shizukuChannel.invokeMethod('syncExcludedApps', {
+        'packages': packageNames,
+      });
+    } catch (e) {
+      debugPrint('Failed to sync excluded apps: $e');
+    }
+  }
+
   void dispose() {}
 }
 
@@ -293,5 +406,17 @@ class DnsTestResult {
     required this.resolvedIp,
     required this.message,
     required this.latencyMs,
+  });
+}
+
+class InstalledApp {
+  final String packageName;
+  final String appName;
+  final String? iconBase64;
+
+  InstalledApp({
+    required this.packageName,
+    required this.appName,
+    this.iconBase64,
   });
 }

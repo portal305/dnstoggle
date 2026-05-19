@@ -17,7 +17,22 @@ class DnsActionReceiver : BroadcastReceiver() {
             try {
                 when (action) {
                     "com.example.dnstoggle.ACTION_TOGGLE" -> {
-                        DnsManager.toggleDns(context)
+                        val wasActive = DnsManager.isDnsActive()
+                        if (wasActive) {
+                            DnsManager.stopDns(context)
+                            ExcludedAppMonitorService.stopService(context)
+                            DnsNotificationService.stopService(context)
+                        } else {
+                            val excludedPrefs = context.getSharedPreferences("dnstoggle_excluded_apps", Context.MODE_PRIVATE)
+                            val excludedPackages = excludedPrefs.getStringSet("excluded_packages", emptySet()) ?: emptySet()
+                            if (excludedPackages.isNotEmpty()) {
+                                DnsManager.startDns(context)
+                                ExcludedAppMonitorService.startService(context)
+                            } else {
+                                DnsManager.startDns(context)
+                                DnsNotificationService.startService(context)
+                            }
+                        }
                     }
                     "com.example.dnstoggle.ACTION_SELECT_SERVER" -> {
                         val serverId = intent.getStringExtra("server_id")
@@ -30,7 +45,6 @@ class DnsActionReceiver : BroadcastReceiver() {
                 }
                 
                 // Refresh all UI components
-                DnsNotificationService.startService(context)
                 DnsWidgetProvider.updateAllWidgets(context)
                 DnsTileService.requestTileUpdate(context)
                 

@@ -29,8 +29,35 @@ class DnsTileService : TileService() {
         }
 
         Thread {
-            DnsManager.toggleDns(this)
-            // After toggle, update tile on main thread
+            val wasActive = DnsManager.isDnsActive()
+            if (wasActive) {
+                DnsManager.stopDns(this)
+                ExcludedAppMonitorService.stopService(this)
+                DnsNotificationService.stopService(this)
+            } else {
+                val excludedPrefs = getSharedPreferences("dnstoggle_excluded_apps", Context.MODE_PRIVATE)
+                val excludedPackages = excludedPrefs.getStringSet("excluded_packages", emptySet()) ?: emptySet()
+
+                DnsManager.startDns(this)
+
+                if (excludedPackages.isNotEmpty()) {
+                    ExcludedAppMonitorService.startService(this)
+                } else {
+                    val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                    val settingsJson = prefs.getString("flutter.app_settings", null)
+                    var isPersistent = false
+                    if (settingsJson != null) {
+                        try {
+                            val settings = org.json.JSONObject(settingsJson)
+                            isPersistent = settings.optBoolean("persistentNotification", false)
+                        } catch (e: Exception) {}
+                    }
+                    if (isPersistent) {
+                        DnsNotificationService.startService(this)
+                    }
+                }
+            }
+
             val handler = android.os.Handler(android.os.Looper.getMainLooper())
             handler.post {
                 updateTile()

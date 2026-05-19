@@ -4,6 +4,7 @@ class DnsServer {
   final String primaryDns;
   final String? secondaryDns;
   final bool isCustom;
+  final int? latencyMs;
 
   DnsServer({
     required this.id,
@@ -11,6 +12,7 @@ class DnsServer {
     required this.primaryDns,
     this.secondaryDns,
     this.isCustom = false,
+    this.latencyMs,
   });
 
   DnsServer copyWith({
@@ -19,6 +21,7 @@ class DnsServer {
     String? primaryDns,
     String? secondaryDns,
     bool? isCustom,
+    int? latencyMs,
   }) {
     return DnsServer(
       id: id ?? this.id,
@@ -26,6 +29,7 @@ class DnsServer {
       primaryDns: primaryDns ?? this.primaryDns,
       secondaryDns: secondaryDns ?? this.secondaryDns,
       isCustom: isCustom ?? this.isCustom,
+      latencyMs: latencyMs ?? this.latencyMs,
     );
   }
 
@@ -82,7 +86,7 @@ class DnsServer {
     ),
     DnsServer(
       id: 'controld',
-      name: 'Control D (Unfiltered)',
+      name: 'Control D',
       primaryDns: 'p0.freedns.controld.com',
       isCustom: true,
     ),

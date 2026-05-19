@@ -190,6 +190,18 @@ object DnsManager {
         return !active
     }
 
+    fun startDns(hostname: String) {
+        Log.i(TAG, "Starting DNS with hostname: $hostname")
+        ShizukuHelper.runCommand("settings put global $SPECIFIER_KEY $hostname")
+        Thread.sleep(200)
+        ShizukuHelper.runCommand("settings put global $MODE_KEY $MODE_HOSTNAME")
+    }
+
+    fun stopDns() {
+        Log.i(TAG, "Stopping DNS (no context)")
+        ShizukuHelper.runCommand("settings put global $MODE_KEY $MODE_OFF")
+    }
+
     private fun updateFlutterState(context: Context, isRunning: Boolean) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putBoolean(KEY_IS_RUNNING, isRunning).apply()
@@ -198,18 +210,28 @@ object DnsManager {
         DnsWidgetProvider.updateAllWidgets(context)
         MainActivity.notifyFlutterState(isRunning)
         
-        // If notification service is running, it will be updated by startService
-        // We only want to trigger it if it's already active (user opted in)
-        // For simplicity, we can just call it and it will handle channel/show logic
-        // But we should check if the setting is enabled.
+        val excludedPrefs = context.getSharedPreferences("dnstoggle_excluded_apps", Context.MODE_PRIVATE)
+        val excludedPackages = excludedPrefs.getStringSet("excluded_packages", emptySet()) ?: emptySet()
+        val hasExcludedApps = excludedPackages.isNotEmpty()
+        
         val settingsJson = prefs.getString("flutter.app_settings", null)
+        var isPersistent = false
         if (settingsJson != null) {
             try {
                 val settings = JSONObject(settingsJson)
-                if (settings.optBoolean("persistentNotification", false)) {
-                    DnsNotificationService.startService(context)
-                }
+                isPersistent = settings.optBoolean("persistentNotification", false) || hasExcludedApps
             } catch (e: Exception) {}
+        }
+        
+        if (isPersistent && isRunning) {
+            if (hasExcludedApps) {
+                ExcludedAppMonitorService.startService(context)
+            } else {
+                DnsNotificationService.startService(context)
+            }
+        } else {
+            ExcludedAppMonitorService.stopService(context)
+            DnsNotificationService.stopService(context)
         }
     }
 }

@@ -14,17 +14,13 @@ import android.widget.RemoteViews
 class DnsWidgetProvider : AppWidgetProvider() {
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        Thread {
-            for (appWidgetId in appWidgetIds) {
-                updateAppWidget(context, appWidgetManager, appWidgetId)
-            }
-        }.start()
+        for (appWidgetId in appWidgetIds) {
+            updateAppWidget(context, appWidgetManager, appWidgetId)
+        }
     }
 
     override fun onAppWidgetOptionsChanged(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int, newOptions: android.os.Bundle) {
-        Thread {
-            updateAppWidget(context, appWidgetManager, appWidgetId)
-        }.start()
+        updateAppWidget(context, appWidgetManager, appWidgetId)
         super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
     }
 
@@ -114,7 +110,7 @@ internal fun updateAppWidget(context: Context, appWidgetManager: AppWidgetManage
             }
             val togglePendingIntent = PendingIntent.getBroadcast(
                 context, appWidgetId, toggleIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or (if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+                PendingIntent.FLAG_UPDATE_CURRENT or (if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0)
             )
             setOnClickPendingIntent(R.id.widget_container, togglePendingIntent)
         }

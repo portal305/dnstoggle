@@ -1,6 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shimmer/shimmer.dart';
 import '../app_state.dart';
 import '../widgets/widgets.dart';
 import 'settings_screen.dart';
@@ -85,50 +85,30 @@ class _HomeScreenState extends State<HomeScreen>
             return _buildUnsupportedView(context);
           }
 
-          final isLoading = appState.isLoading;
-
           return SafeArea(
             child: Column(
               children: [
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: isLoading
-                      ? const SizedBox.shrink()
-                      : _buildHealthCheck(context, appState),
+                  child: _buildHealthCheck(context, appState),
                 ),
                 const SizedBox(height: 16),
                 Expanded(
                   child: _buildAnimatedStatus(
                     context,
                     appState,
-                    hideCircles: isLoading,
+                    hideCircles: false,
                   ),
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: isLoading
-                      ? Shimmer.fromColors(
-                          baseColor: Theme.of(context).brightness == Brightness.dark
-                              ? Colors.white.withValues(alpha: 0.06)
-                              : Colors.grey[300]!,
-                          highlightColor: Theme.of(context).brightness == Brightness.dark
-                              ? Colors.white.withValues(alpha: 0.12)
-                              : Colors.grey[100]!,
-                          child: Column(
-                            children: [
-                              _buildShimmerBlock(height: 88, radius: 28),
-                              const SizedBox(height: 16),
-                              _buildShimmerBlock(height: 72, radius: 28),
-                            ],
-                          ),
-                        )
-                      : Column(
-                          children: [
-                            _buildExpressiveServerSelector(context, appState),
-                            const SizedBox(height: 16),
-                            _buildExpressiveToggleButton(context, appState),
-                          ],
-                        ),
+                  child: Column(
+                    children: [
+                      _buildExpressiveServerSelector(context, appState),
+                      const SizedBox(height: 16),
+                      _buildExpressiveToggleButton(context, appState),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 32),
               ],
@@ -139,36 +119,20 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildShimmerBlock({required double height, required double radius}) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      width: double.infinity,
-      height: height,
-      decoration: BoxDecoration(
-        color: isDark ? Colors.white.withValues(alpha: 0.1) : Colors.grey[300],
-        borderRadius: BorderRadius.circular(radius),
-      ),
-    );
-  }
-
   Widget _buildAnimatedStatus(
     BuildContext context,
     AppState appState, {
     bool hideCircles = false,
   }) {
     final isRunning = appState.isRunning;
-    final isLoading = appState.isLoading;
     final colorScheme = Theme.of(context).colorScheme;
-    final primaryColor = isRunning && !isLoading
-        ? Colors.green
-        : colorScheme.outline;
-    final selectedServer = appState.selectedServer;
+    final primaryColor = isRunning ? Colors.green : colorScheme.outline;
 
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         ScaleTransition(
-          scale: isRunning && !isLoading
+          scale: isRunning
               ? _pulseAnimation
               : const AlwaysStoppedAnimation(1.0),
           child: AnimatedContainer(
@@ -178,7 +142,7 @@ class _HomeScreenState extends State<HomeScreen>
             height: 180,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: isRunning && !isLoading
+              gradient: isRunning
                   ? RadialGradient(
                       colors: [
                         Colors.green.withValues(alpha: 0.2),
@@ -188,7 +152,7 @@ class _HomeScreenState extends State<HomeScreen>
                       stops: const [0.3, 0.6, 1.0],
                     )
                   : null,
-              boxShadow: isRunning && !isLoading
+              boxShadow: isRunning
                   ? [
                       BoxShadow(
                         color: Colors.green.withValues(
@@ -225,7 +189,7 @@ class _HomeScreenState extends State<HomeScreen>
                   height: 130,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: isRunning && !isLoading
+                    color: isRunning
                         ? Colors.green.withValues(alpha: 0.12)
                         : colorScheme.surfaceContainerHighest.withValues(
                             alpha: 0.5,
@@ -236,9 +200,7 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                   ),
                   child: Icon(
-                    isRunning && !isLoading
-                        ? Icons.shield_rounded
-                        : Icons.shield_outlined,
+                    isRunning ? Icons.shield_rounded : Icons.shield_outlined,
                     size: 64,
                     color: primaryColor,
                   ),
@@ -254,13 +216,11 @@ class _HomeScreenState extends State<HomeScreen>
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
             child: Column(
-              key: ValueKey<bool>(isRunning && !isLoading),
+              key: ValueKey<bool>(isRunning),
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  isRunning && !isLoading
-                      ? 'PROTECTION ACTIVE'
-                      : 'PROTECTION DISABLED',
+                  isRunning ? 'PROTECTION ACTIVE' : 'PROTECTION DISABLED',
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     color: primaryColor,
                     fontWeight: FontWeight.bold,
@@ -269,11 +229,21 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  isRunning && !isLoading
+                  isRunning
                       ? 'Your connection is secure'
                       : 'Tap below to enable filtering',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                SizedBox(
+                  height: 44,
+                  child: Center(
+                    child: isRunning && appState.protectionStartedAt != null
+                        ? LiveProtectionTimer(
+                            startTime: appState.protectionStartedAt,
+                          )
+                        : const SizedBox.shrink(),
                   ),
                 ),
               ],
@@ -468,6 +438,103 @@ class _HomeScreenState extends State<HomeScreen>
               }
             },
             child: Text(!shizukuAlive ? 'Fix' : 'Grant'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class LiveProtectionTimer extends StatefulWidget {
+  final DateTime? startTime;
+
+  const LiveProtectionTimer({super.key, required this.startTime});
+
+  @override
+  State<LiveProtectionTimer> createState() => _LiveProtectionTimerState();
+}
+
+class _LiveProtectionTimerState extends State<LiveProtectionTimer> {
+  Timer? _timer;
+  late Duration _elapsed;
+
+  @override
+  void initState() {
+    super.initState();
+    _updateElapsed();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          _updateElapsed();
+        });
+      }
+    });
+  }
+
+  void _updateElapsed() {
+    if (widget.startTime == null) {
+      _elapsed = Duration.zero;
+    } else {
+      _elapsed = DateTime.now().difference(widget.startTime!);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant LiveProtectionTimer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.startTime != widget.startTime) {
+      _updateElapsed();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  String _formatDuration(Duration d) {
+    final hh = d.inHours.toString().padLeft(2, '0');
+    final mm = (d.inMinutes % 60).toString().padLeft(2, '0');
+    final ss = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$hh:$mm:$ss';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.startTime == null) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.green.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.green.withValues(alpha: 0.25),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: const BoxDecoration(
+              color: Colors.green,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'ACTIVE FOR ${_formatDuration(_elapsed)}',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: Colors.green,
+              letterSpacing: 1.0,
+            ),
           ),
         ],
       ),

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../widgets/widgets.dart';
 import 'excluded_apps_screen.dart';
+import 'dns_leak_test_screen.dart';
 
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
@@ -53,21 +54,13 @@ class SettingsScreen extends StatelessWidget {
                     _buildSwitchTile(
                       context: context,
                       title: 'Persistent Notification',
-                      subtitle: appState.excludedApps.isNotEmpty
-                          ? 'Required when excluded apps are active'
-                          : 'Control from your status bar',
+                      subtitle: 'Control from your status bar',
                       icon: Icons.notifications_active_rounded,
-                      iconColor: appState.excludedApps.isNotEmpty
-                          ? colorScheme.onSurfaceVariant
-                          : colorScheme.primary,
-                      value: appState.excludedApps.isNotEmpty
-                          ? true
-                          : appState.settings.persistentNotification,
-                      onChanged: appState.excludedApps.isNotEmpty
-                          ? null
-                          : (value) => appState.updateSettings(
-                              appState.settings.copyWith(persistentNotification: value),
-                            ),
+                      iconColor: colorScheme.primary,
+                      value: appState.settings.persistentNotification,
+                      onChanged: (value) => appState.updateSettings(
+                        appState.settings.copyWith(persistentNotification: value),
+                      ),
                     ),
                   ],
                 ),
@@ -110,64 +103,65 @@ class SettingsScreen extends StatelessWidget {
               Consumer<AppState>(
                 builder: (context, appState, child) {
                   return ExpressiveCard(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        PageRouteBuilder(
-                          pageBuilder: (context, animation, secondaryAnimation) =>
-                              const ExcludedAppsScreen(showOnlyExcluded: true),
-                          transitionsBuilder:
-                              (context, animation, secondaryAnimation, child) {
-                            return SlideTransition(
-                              position: Tween<Offset>(
-                                begin: const Offset(0.0, 1.0),
-                                end: Offset.zero,
-                              ).animate(
-                                CurvedAnimation(
-                                  parent: animation,
-                                  curve: Curves.easeOutCubic,
-                                ),
-                              ),
-                              child: child,
-                            );
-                          },
-                        ),
-                      );
-                    },
-                    child: Row(
+                    padding: EdgeInsets.zero,
+                    child: Column(
                       children: [
-                        ExpressiveIconContainer(
-                          icon: Icons.block_rounded,
-                          size: 48,
-                          iconSize: 24,
-                          color: colorScheme.secondary,
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Excluded Apps',
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                appState.excludedApps.isEmpty
-                                    ? 'No apps excluded'
-                                    : '${appState.excludedApps.length} app${appState.excludedApps.length > 1 ? 's' : ''} bypassing DNS',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
+                        _buildSwitchTile(
+                          context: context,
+                          title: 'Excluded Apps Monitor',
+                          subtitle: 'Bypass DNS for excluded apps in background',
+                          icon: Icons.track_changes_rounded,
+                          iconColor: colorScheme.secondary,
+                          value: appState.settings.excludedAppsMonitor,
+                          onChanged: (value) => appState.updateSettings(
+                            appState.settings.copyWith(excludedAppsMonitor: value),
                           ),
                         ),
-                        Icon(
-                          Icons.chevron_right_rounded,
-                          color: colorScheme.onSurfaceVariant,
+                        const Divider(height: 1, indent: 64),
+                        ListTile(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              PageRouteBuilder(
+                                pageBuilder: (context, animation, secondaryAnimation) =>
+                                    const ExcludedAppsScreen(showOnlyExcluded: true),
+                                transitionsBuilder:
+                                    (context, animation, secondaryAnimation, child) {
+                                  return SlideTransition(
+                                    position: Tween<Offset>(
+                                      begin: const Offset(0.0, 1.0),
+                                      end: Offset.zero,
+                                    ).animate(
+                                      CurvedAnimation(
+                                        parent: animation,
+                                        curve: Curves.easeOutCubic,
+                                      ),
+                                    ),
+                                    child: child,
+                                  );
+                                },
+                              ),
+                            );
+                          },
+                          leading: ExpressiveIconContainer(
+                            icon: Icons.block_rounded,
+                            size: 40,
+                            iconSize: 20,
+                            color: colorScheme.secondary,
+                          ),
+                          title: Text(
+                            'Excluded Apps List',
+                            style: const TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                          subtitle: Text(
+                            appState.excludedApps.isEmpty
+                                ? 'No apps excluded'
+                                : '${appState.excludedApps.length} app${appState.excludedApps.length > 1 ? 's' : ''} bypassing DNS',
+                          ),
+                          trailing: Icon(
+                            Icons.chevron_right_rounded,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ],
                     ),
@@ -185,6 +179,8 @@ class SettingsScreen extends StatelessWidget {
                 _buildTestConnectionCard(context, appState)
               else
                 _buildTestResultCard(context, appState),
+              const SizedBox(height: 12),
+              _buildDnsLeakTestCard(context),
 
               const SizedBox(height: 28),
               ExpressiveSectionHeader(
@@ -507,6 +503,70 @@ class SettingsScreen extends StatelessWidget {
       title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
       subtitle: Text(subtitle),
       trailing: trailing,
+    );
+  }
+
+  Widget _buildDnsLeakTestCard(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return ExpressiveCard(
+      onTap: () {
+        Navigator.push(
+          context,
+          PageRouteBuilder(
+            pageBuilder: (context, animation, secondaryAnimation) =>
+                const DnsLeakTestScreen(),
+            transitionsBuilder:
+                (context, animation, secondaryAnimation, child) {
+              return SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0.0, 1.0),
+                  end: Offset.zero,
+                ).animate(
+                  CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                  ),
+                ),
+                child: child,
+              );
+            },
+          ),
+        );
+      },
+      child: Row(
+        children: [
+          ExpressiveIconContainer(
+            icon: Icons.security_rounded,
+            size: 48,
+            iconSize: 24,
+            color: colorScheme.tertiary,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'DNS Leak Test',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  'Check if your DNS queries are leaking',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.chevron_right_rounded,
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ],
+      ),
     );
   }
 }

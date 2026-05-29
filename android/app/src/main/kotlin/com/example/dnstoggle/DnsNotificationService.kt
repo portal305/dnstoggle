@@ -15,13 +15,6 @@ class DnsNotificationService : Service() {
         const val ACTION_STOP_SERVICE = "com.example.dnstoggle.ACTION_STOP_SERVICE"
 
         fun startService(context: Context) {
-            val excludedPrefs = context.getSharedPreferences("dnstoggle_excluded_apps", Context.MODE_PRIVATE)
-            val excludedPackages = excludedPrefs.getStringSet("excluded_packages", emptySet()) ?: emptySet()
-            if (excludedPackages.isNotEmpty()) {
-                android.util.Log.i("DnsNotificationService", "Excluded apps exist, monitor service handles notification")
-                return
-            }
-
             val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
             val settingsJson = prefs.getString("flutter.app_settings", null)
             var isPersistent = false

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -281,6 +282,18 @@ class DnsService {
     }
   }
 
+  Future<bool> requestNotificationPermission() async {
+    try {
+      final result = await _shizukuChannel.invokeMethod<bool>(
+        'requestNotificationPermission',
+      );
+      return result ?? false;
+    } catch (e) {
+      debugPrint('Failed to request notification permission: $e');
+      return false;
+    }
+  }
+
   Future<bool> startNotificationService() async {
     try {
       final result = await _shizukuChannel.invokeMethod<bool>(
@@ -390,8 +403,81 @@ class DnsService {
     }
   }
 
+  Future<DnsLeakResult> performDnsLeakTest(bool isProtectionRunning) async {
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 5);
+    
+    Map<String, dynamic> clientJson = {};
+    Map<String, dynamic> dnsJson = {};
+
+    try {
+      final clientRequest = await client.getUrl(Uri.parse('https://ip-api.com/json'));
+      final clientResponse = await clientRequest.close();
+      if (clientResponse.statusCode == 200) {
+        final body = await clientResponse.transform(utf8.decoder).join();
+        clientJson = jsonDecode(body) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('DnsService: Failed to fetch client IP: $e');
+    }
+
+    try {
+      final dnsRequest = await client.getUrl(Uri.parse('https://edns.ip-api.com/json'));
+      final dnsResponse = await dnsRequest.close();
+      if (dnsResponse.statusCode == 200) {
+        final body = await dnsResponse.transform(utf8.decoder).join();
+        dnsJson = jsonDecode(body) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('DnsService: Failed to fetch DNS resolver IP: $e');
+    } finally {
+      client.close();
+    }
+
+    return DnsLeakResult.fromJson(
+      clientJson: clientJson,
+      dnsJson: dnsJson,
+      isProtectionRunning: isProtectionRunning,
+    );
+  }
+
+  Future<bool> checkVpnPermission() async {
+    try {
+      final result = await _shizukuChannel.invokeMethod<bool>('prepareVpn');
+      return result ?? false;
+    } catch (e) {
+      debugPrint('Failed to check VPN permission: $e');
+      return false;
+    }
+  }
+
+  Future<bool> startVpn(String dohUrl, String corporateDns, List<String> splitDomains) async {
+    try {
+      final result = await _shizukuChannel.invokeMethod<bool>('startVpnService', {
+        'dohUrl': dohUrl,
+        'corporateDns': corporateDns,
+        'splitDomains': splitDomains,
+      });
+      return result ?? false;
+    } catch (e) {
+      debugPrint('Failed to start VPN service: $e');
+      return false;
+    }
+  }
+
+  Future<bool> stopVpn() async {
+    try {
+      final result = await _shizukuChannel.invokeMethod<bool>('stopVpnService');
+      return result ?? false;
+    } catch (e) {
+      debugPrint('Failed to stop VPN service: $e');
+      return false;
+    }
+  }
+
   void dispose() {}
 }
+
 
 class DnsTestResult {
   final bool isSuccess;

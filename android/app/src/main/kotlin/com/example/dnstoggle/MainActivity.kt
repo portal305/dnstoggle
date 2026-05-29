@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.net.VpnService
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -13,13 +14,31 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONObject
+import rikka.shizuku.Shizuku
 import java.io.ByteArrayOutputStream
+import java.util.ArrayList
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "dnstoggle/shizuku"
     private val SHIZUKU_CHANNEL = "dnstoggle/shizuku_native"
+    private val SHIZUKU_PERMISSION_REQUEST_CODE = 1001
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var pendingVpnResult: MethodChannel.Result? = null
+    private var pendingShizukuPermissionResult: MethodChannel.Result? = null
+
+    private val shizukuPermissionListener: Shizuku.OnRequestPermissionResultListener =
+        Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
+            if (requestCode != SHIZUKU_PERMISSION_REQUEST_CODE) return@OnRequestPermissionResultListener
+
+            val granted = grantResult == PackageManager.PERMISSION_GRANTED
+            mainHandler.post {
+                pendingShizukuPermissionResult?.success(granted)
+                pendingShizukuPermissionResult = null
+                Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
+            }
+        }
+
     
     companion object {
         private var methodChannel: MethodChannel? = null
@@ -92,6 +111,16 @@ class MainActivity : FlutterActivity() {
         return bitmap
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 2004) {
+            val success = resultCode == RESULT_OK
+            pendingVpnResult?.success(success)
+            pendingVpnResult = null
+        }
+    }
+
+
     private fun hasUsageAccess(): Boolean {
         val appOps = getSystemService(Context.APP_OPS_SERVICE) as android.app.AppOpsManager
         val mode = appOps.checkOpNoThrow(
@@ -125,8 +154,29 @@ class MainActivity : FlutterActivity() {
                 }
                 "grantWriteSecureSettings" -> result.success(ShizukuHelper.grantWriteSecureSettings(this))
                 "requestPermission" -> {
-                    ShizukuHelper.requestPermission(1001)
-                    result.success(true)
+                    when {
+                        !ShizukuHelper.pingBinder() -> result.success(false)
+                        ShizukuHelper.checkSelfPermission() -> result.success(true)
+                        pendingShizukuPermissionResult != null -> {
+                            result.error(
+                                "permission_request_in_progress",
+                                "A Shizuku permission request is already pending.",
+                                null
+                            )
+                        }
+                        else -> {
+                            try {
+                                pendingShizukuPermissionResult = result
+                                Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
+                                Shizuku.requestPermission(SHIZUKU_PERMISSION_REQUEST_CODE)
+                            } catch (e: Exception) {
+                                pendingShizukuPermissionResult = null
+                                Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
+                                Log.e("MainActivity", "Shizuku permission request failed", e)
+                                result.success(false)
+                            }
+                        }
+                    }
                 }
                 "startNotificationService" -> {
                     DnsNotificationService.startService(this)
@@ -193,7 +243,43 @@ class MainActivity : FlutterActivity() {
                     ExcludedAppMonitorService.syncExcludedApps(this, packages)
                     result.success(true)
                 }
+                "prepareVpn" -> {
+                    val intent = VpnService.prepare(this)
+                    if (intent != null) {
+                        pendingVpnResult = result
+                        startActivityForResult(intent, 2004)
+                    } else {
+                        result.success(true)
+                    }
+                }
+                "startVpnService" -> {
+                    val dohUrl = call.argument<String>("dohUrl") ?: "https://cloudflare-dns.com/dns-query"
+                    val corporateDns = call.argument<String>("corporateDns") ?: ""
+                    val splitDomains = call.argument<List<String>>("splitDomains") ?: emptyList()
+                    
+                    val intent = Intent(this, DnsVpnService::class.java).apply {
+                        action = DnsVpnService.ACTION_START
+                        putExtra("doh_url", dohUrl)
+                        putExtra("corporate_dns", corporateDns)
+                        putStringArrayListExtra("split_domains", ArrayList(splitDomains))
+                    }
+                    
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                         startForegroundService(intent)
+                    } else {
+                         startService(intent)
+                    }
+                    result.success(true)
+                }
+                "stopVpnService" -> {
+                    val intent = Intent(this, DnsVpnService::class.java).apply {
+                        action = DnsVpnService.ACTION_STOP
+                    }
+                    startService(intent)
+                    result.success(true)
+                }
                 else -> result.notImplemented()
+
             }
         }
 

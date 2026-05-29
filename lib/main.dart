@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'app_state.dart';
 import 'services/services.dart';
@@ -7,6 +8,12 @@ import 'screens/onboarding_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarDividerColor: Colors.transparent,
+    ),
+  );
   runApp(const DnsToggleApp());
 }
 
@@ -29,6 +36,9 @@ class DnsToggleApp extends StatelessWidget {
         themeMode: ThemeMode.system,
         home: Consumer<AppState>(
           builder: (context, appState, child) {
+            if (appState.isLoading) {
+              return Container();
+            }
             if (!appState.settings.onboardingCompleted) {
               return const OnboardingScreen();
             }

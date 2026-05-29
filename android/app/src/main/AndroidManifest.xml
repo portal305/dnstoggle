@@ -13,7 +13,9 @@
     <application
         android:label="DNS Toggle"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:enableOnBackInvokedCallback="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -84,6 +86,15 @@
         <service
             android:name=".DnsRemoteViewsService"
             android:permission="android.permission.BIND_REMOTEVIEWS" />
+
+        <service
+            android:name=".DnsVpnService"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
 
         <receiver
             android:name=".BootReceiver"

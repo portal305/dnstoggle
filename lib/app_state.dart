@@ -20,6 +20,8 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   bool _isLoading = true;
   DnsTestResult? _testResult;
   bool _isTesting = false;
+  DnsLeakResult? _leakTestResult;
+  bool _isTestingLeak = false;
   String _appVersion = '1.0.0';
   List<ExcludedApp> _excludedApps = [];
   Map<String, int> _serverLatencies = {};
@@ -28,6 +30,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   bool _isLoadingApps = false;
   bool _hasLoadedApps = false;
   bool _isRefreshingApps = false;
+  DateTime? _protectionStartedAt;
 
   List<DnsServer> get servers => _servers;
   DnsServer? get selectedServer => _selectedServer;
@@ -39,10 +42,13 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   bool get isLoading => _isLoading;
   DnsTestResult? get testResult => _testResult;
   bool get isTesting => _isTesting;
+  DnsLeakResult? get leakTestResult => _leakTestResult;
+  bool get isTestingLeak => _isTestingLeak;
   String get appVersion => _appVersion;
   List<ExcludedApp> get excludedApps => _excludedApps;
   Map<String, int> get serverLatencies => _serverLatencies;
   bool get isMeasuringLatency => _isMeasuringLatency;
+  DateTime? get protectionStartedAt => _protectionStartedAt;
   List<InstalledApp> get installedApps => _installedApps;
   bool get isLoadingApps => _isLoadingApps;
   bool get hasLoadedApps => _hasLoadedApps;
@@ -79,11 +85,16 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _refreshState() async {
     _shizukuBinderAlive = await _shizukuService.checkBinderAlive();
+    _shizukuHasPermission = await _shizukuService.checkSelfPermission();
+    if (_settings.useVpnMode) {
+      notifyListeners();
+      return;
+    }
     final newState = await _dnsService.checkActualDnsState();
     if (newState != _isRunning) {
       _isRunning = newState;
-      notifyListeners();
     }
+    notifyListeners();
   }
 
   Future<void> init() async {
@@ -111,6 +122,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     if (_installedApps.isNotEmpty) {
       _hasLoadedApps = true;
     }
+    _protectionStartedAt = _storageService.getProtectionStartedAt();
 
     final selectedId = _storageService.getSelectedServerId();
     _selectedServer = _servers.firstWhere(
@@ -121,11 +133,26 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
 
     await Future.delayed(const Duration(milliseconds: 300));
 
-    _isRunning = await _dnsService.checkActualDnsState();
-    await _storageService.setIsRunning(_isRunning);
+    if (_settings.useVpnMode) {
+      _isRunning = _storageService.getIsRunning();
+    } else {
+      _isRunning = await _dnsService.checkActualDnsState();
+      await _storageService.setIsRunning(_isRunning);
+      if (!_isRunning) {
+        _protectionStartedAt = null;
+        await _storageService.setProtectionStartedAt(null);
+      }
+    }
 
     if (_settings.persistentNotification && _isRunning) {
       await _dnsService.startNotificationService();
+    }
+
+    if (_settings.excludedAppsMonitor &&
+        _excludedApps.isNotEmpty &&
+        _isRunning) {
+      await _dnsService.syncExcludedApps(_excludedApps);
+      await _dnsService.startExcludedAppMonitor();
     }
 
     _isLoading = false;
@@ -139,14 +166,17 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<bool> checkBinderAlive() async {
-    return await _shizukuService.checkBinderAlive();
+    _shizukuBinderAlive = await _shizukuService.checkBinderAlive();
+    notifyListeners();
+    return _shizukuBinderAlive;
   }
 
   Future<bool> requestShizukuPermission() async {
-    final granted = await _shizukuService.requestPermission();
-    _shizukuHasPermission = granted;
+    await _shizukuService.requestPermission();
+    _shizukuHasPermission = await _shizukuService.checkSelfPermission();
+    _shizukuBinderAlive = await _shizukuService.checkBinderAlive();
     notifyListeners();
-    return granted;
+    return _shizukuHasPermission;
   }
 
   Future<void> selectServer(DnsServer server) async {
@@ -210,6 +240,32 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   Future<bool> startDnsService() async {
     if (_selectedServer == null) return false;
 
+    if (_settings.useVpnMode) {
+      final hasPermission = await _dnsService.checkVpnPermission();
+      if (!hasPermission) {
+        return false;
+      }
+
+      String dohUrl = _settings.customDohUrl;
+      if (dohUrl.isEmpty) {
+        dohUrl = 'https://${_selectedServer!.primaryDns}/dns-query';
+      }
+
+      final success = await _dnsService.startVpn(
+        dohUrl,
+        _settings.corporateDnsIp,
+        _settings.splitTunnelDomains,
+      );
+      if (success) {
+        _isRunning = true;
+        await _storageService.setIsRunning(true);
+        _protectionStartedAt = DateTime.now();
+        await _storageService.setProtectionStartedAt(_protectionStartedAt);
+      }
+      notifyListeners();
+      return success;
+    }
+
     if (!_shizukuHasPermission) {
       _shizukuHasPermission = await _shizukuService.requestPermission();
       if (!_shizukuHasPermission) {
@@ -221,14 +277,13 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     if (success) {
       _isRunning = await _dnsService.checkActualDnsState();
       await _storageService.setIsRunning(_isRunning);
-      if (_excludedApps.isNotEmpty && !_settings.persistentNotification) {
-        _settings = _settings.copyWith(persistentNotification: true);
-        await _storageService.saveSettings(_settings);
-      }
+      _protectionStartedAt = DateTime.now();
+      await _storageService.setProtectionStartedAt(_protectionStartedAt);
+
       if (_settings.persistentNotification) {
         await _dnsService.startNotificationService();
       }
-      if (_excludedApps.isNotEmpty) {
+      if (_settings.excludedAppsMonitor && _excludedApps.isNotEmpty) {
         await _dnsService.syncExcludedApps(_excludedApps);
         await _dnsService.startExcludedAppMonitor();
       }
@@ -238,6 +293,18 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<bool> stopDnsService() async {
+    if (_settings.useVpnMode) {
+      final success = await _dnsService.stopVpn();
+      if (success) {
+        _isRunning = false;
+        await _storageService.setIsRunning(false);
+        _protectionStartedAt = null;
+        await _storageService.setProtectionStartedAt(null);
+      }
+      notifyListeners();
+      return success;
+    }
+
     if (!_shizukuHasPermission) {
       _shizukuHasPermission = await _shizukuService.requestPermission();
       if (!_shizukuHasPermission) {
@@ -250,6 +317,9 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     if (success) {
       _isRunning = await _dnsService.checkActualDnsState();
       await _storageService.setIsRunning(_isRunning);
+      _protectionStartedAt = null;
+      await _storageService.setProtectionStartedAt(null);
+
       if (_settings.persistentNotification) {
         await _dnsService.stopNotificationService();
       }
@@ -271,6 +341,26 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
 
   void clearTestResult() {
     _testResult = null;
+    notifyListeners();
+  }
+
+  Future<void> runDnsLeakTest() async {
+    _isTestingLeak = true;
+    _leakTestResult = null;
+    notifyListeners();
+
+    try {
+      _leakTestResult = await _dnsService.performDnsLeakTest(_isRunning);
+    } catch (e) {
+      debugPrint('AppState: Leak test failed: $e');
+    } finally {
+      _isTestingLeak = false;
+      notifyListeners();
+    }
+  }
+
+  void clearLeakTestResult() {
+    _leakTestResult = null;
     notifyListeners();
   }
 
@@ -314,12 +404,9 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       await _storageService.saveExcludedApps(_excludedApps);
       await _dnsService.syncExcludedApps(_excludedApps);
 
-      if (!_settings.persistentNotification) {
-        _settings = _settings.copyWith(persistentNotification: true);
-        await _storageService.saveSettings(_settings);
-      }
-
-      if (_isRunning && _excludedApps.length == 1) {
+      if (_isRunning &&
+          _settings.excludedAppsMonitor &&
+          _excludedApps.length == 1) {
         await _dnsService.startExcludedAppMonitor();
       }
       notifyListeners();
@@ -343,35 +430,41 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       _isRefreshingApps = true;
       notifyListeners();
 
-      _dnsService.getInstalledApps().then((apps) {
-        _installedApps = apps;
-        _storageService.saveInstalledApps(apps);
-        _isLoadingApps = false;
-        _isRefreshingApps = false;
-        _hasLoadedApps = true;
-        notifyListeners();
-      }).catchError((e) {
-        debugPrint('Failed to refresh apps: $e');
-        _isRefreshingApps = false;
-        notifyListeners();
-      });
+      _dnsService
+          .getInstalledApps()
+          .then((apps) {
+            _installedApps = apps;
+            _storageService.saveInstalledApps(apps);
+            _isLoadingApps = false;
+            _isRefreshingApps = false;
+            _hasLoadedApps = true;
+            notifyListeners();
+          })
+          .catchError((e) {
+            debugPrint('Failed to refresh apps: $e');
+            _isRefreshingApps = false;
+            notifyListeners();
+          });
       return;
     }
 
     _isLoadingApps = true;
     notifyListeners();
 
-    _dnsService.getInstalledApps().then((apps) {
-      _installedApps = apps;
-      _storageService.saveInstalledApps(apps);
-      _isLoadingApps = false;
-      _hasLoadedApps = true;
-      notifyListeners();
-    }).catchError((e) {
-      debugPrint('Failed to load apps: $e');
-      _isLoadingApps = false;
-      notifyListeners();
-    });
+    _dnsService
+        .getInstalledApps()
+        .then((apps) {
+          _installedApps = apps;
+          _storageService.saveInstalledApps(apps);
+          _isLoadingApps = false;
+          _hasLoadedApps = true;
+          notifyListeners();
+        })
+        .catchError((e) {
+          debugPrint('Failed to load apps: $e');
+          _isLoadingApps = false;
+          notifyListeners();
+        });
   }
 
   Future<bool> checkUsageAccessPermission() async {
@@ -382,10 +475,20 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     await _dnsService.openUsageAccessSettings();
   }
 
-  Future<void> updateSettings(AppSettings newSettings) async {
-    final oldPersistent = _settings.persistentNotification;
+  Future<bool> requestNotificationPermission() async {
+    return await _dnsService.requestNotificationPermission();
+  }
 
-    if (newSettings.persistentNotification && !oldPersistent) {
+  Future<void> updateSettings(AppSettings newSettings) async {
+    if (newSettings.useVpnMode != _settings.useVpnMode && _isRunning) {
+      await stopDnsService();
+    }
+
+    final oldPersistent = _settings.persistentNotification;
+    final oldMonitor = _settings.excludedAppsMonitor;
+
+    if ((newSettings.persistentNotification && !oldPersistent) ||
+        (newSettings.excludedAppsMonitor && !oldMonitor)) {
       final granted = await _shizukuChannel.invokeMethod<bool>(
         'requestNotificationPermission',
       );
@@ -405,6 +508,17 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
         }
       } else {
         await _dnsService.stopNotificationService();
+      }
+    }
+
+    if (newSettings.excludedAppsMonitor != oldMonitor) {
+      if (newSettings.excludedAppsMonitor) {
+        if (_isRunning && _excludedApps.isNotEmpty) {
+          await _dnsService.syncExcludedApps(_excludedApps);
+          await _dnsService.startExcludedAppMonitor();
+        }
+      } else {
+        await _dnsService.stopExcludedAppMonitor();
       }
     }
 

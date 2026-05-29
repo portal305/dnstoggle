@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shimmer/shimmer.dart';
 import '../app_state.dart';
 import '../models/models.dart';
 import '../services/dns_service.dart';
@@ -70,7 +69,6 @@ class _ExcludedAppsScreenState extends State<ExcludedAppsScreen> {
           final excludedApps = appState.excludedApps;
           final installedApps = appState.installedApps;
           final isLoading = appState.isLoadingApps;
-          final hasLoaded = appState.hasLoadedApps;
 
           return Column(
             children: [
@@ -115,16 +113,9 @@ class _ExcludedAppsScreenState extends State<ExcludedAppsScreen> {
                   child: _buildAppList(context, installedApps, excludedApps),
                 )
               else if (isLoading)
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
-                    itemCount: 12,
-                    itemBuilder: (context, index) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _buildShimmerItem(context),
-                      );
-                    },
+                const Expanded(
+                  child: Center(
+                    child: CircularProgressIndicator(),
                   ),
                 )
               else
@@ -160,70 +151,6 @@ class _ExcludedAppsScreenState extends State<ExcludedAppsScreen> {
             ],
           );
         },
-      ),
-    );
-  }
-
-  Widget _buildShimmerItem(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Shimmer.fromColors(
-      baseColor: isDark
-          ? Colors.white.withValues(alpha: 0.06)
-          : Colors.grey[300]!,
-      highlightColor: isDark
-          ? Colors.white.withValues(alpha: 0.12)
-          : Colors.grey[100]!,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    height: 14,
-                    width: 120,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    height: 10,
-                    width: 180,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Container(
-              width: 48,
-              height: 28,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

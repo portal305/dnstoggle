@@ -87,6 +87,20 @@ class StorageService {
     await _prefs.setBool(_isRunningKey, value);
   }
 
+  DateTime? getProtectionStartedAt() {
+    final str = _prefs.getString('protection_started_at');
+    if (str == null) return null;
+    return DateTime.tryParse(str);
+  }
+
+  Future<void> setProtectionStartedAt(DateTime? value) async {
+    if (value == null) {
+      await _prefs.remove('protection_started_at');
+    } else {
+      await _prefs.setString('protection_started_at', value.toIso8601String());
+    }
+  }
+
   DnsServer? getRunningServer() {
     final isRunning = getIsRunning();
     if (!isRunning) return null;

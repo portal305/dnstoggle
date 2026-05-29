@@ -24,8 +24,8 @@ class ExcludedAppMonitorService : Service() {
 
     companion object {
         private const val TAG = "ExcludedAppMonitor"
-        private const val CHANNEL_ID = "dns_toggle_channel"
-        private const val NOTIFICATION_ID = 1002
+        private const val CHANNEL_ID = "dns_toggle_monitor"
+        private const val NOTIFICATION_ID = 1003
         private const val PREFS_NAME = "dnstoggle_excluded_apps"
         private const val KEY_EXCLUDED_PACKAGES = "excluded_packages"
         private const val KEY_WAS_DNS_ACTIVE = "was_dns_active"
@@ -89,10 +89,10 @@ class ExcludedAppMonitorService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "DNS Toggle",
+                "App Bypass Monitor",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Shows DNS status and monitors excluded apps"
+                description = "Monitors active apps to temporarily bypass DNS for excluded apps"
                 setShowBadge(false)
             }
             val manager = getSystemService(NotificationManager::class.java)
@@ -101,43 +101,25 @@ class ExcludedAppMonitorService : Service() {
     }
 
     private fun createNotification(): Notification {
-        val hostname = DnsManager.getActualDnsHostname() ?: DnsManager.getSelectedServerHostname(this)
-        val displayHostname = hostname ?: "DNS"
-        val dnsActive = try { DnsManager.isDnsActive() } catch (e: Exception) { false }
-        val statusText = if (dnsActive) "Status: Active ($displayHostname)" else "Status: Inactive"
-
-        val toggleIntent = Intent(this, DnsActionReceiver::class.java).apply {
-            action = "com.example.dnstoggle.ACTION_TOGGLE"
-            setPackage(packageName)
-        }
-        val togglePendingIntent = PendingIntent.getBroadcast(
-            this, 0, toggleIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
-        )
-
+        val count = excludedPackages.size
+        val countText = if (count == 1) "1 app is configured to bypass DNS" else "$count apps are configured to bypass DNS"
+        
         val mainIntent = Intent(this, MainActivity::class.java).apply {
             setPackage(packageName)
         }
         val mainPendingIntent = PendingIntent.getActivity(
-            this, 0, mainIntent,
+            this, 1, mainIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
         )
 
-        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("DNS Toggle")
-            .setContentText(statusText)
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("App Bypass Monitor")
+            .setContentText(countText)
             .setSmallIcon(R.drawable.ic_shield)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(mainPendingIntent)
-
-        if (dnsActive) {
-            builder.addAction(android.R.drawable.ic_media_pause, "Turn OFF", togglePendingIntent)
-        } else {
-            builder.addAction(android.R.drawable.ic_media_play, "Turn ON", togglePendingIntent)
-        }
-
-        return builder.build()
+            .build()
     }
 
     private fun updateNotification() {
